@@ -8,13 +8,12 @@ import requests
 import multiprocessing
 import string
 import random
-import numba
+import signal
 import os
 import time
 import random as r
 import sys
 import asyncio
-from multiprocessing import Pool, Manager
 class Block:
     def __init__(self, index, transactions,  timestamp, previous_hash, nonce = False, has = False ):
         self.index = index
@@ -71,7 +70,7 @@ class Blockchain:
                 block_hash == block.compute_hash())
 
     def proof_of_work(self, nonce):
-        #print('proof')
+        print('proof')
         block = self.new_block
         #print(block.transactions, block.index, block.previous_hash, block.timestamp)
         #nonce = args[0]# range
@@ -82,11 +81,16 @@ class Blockchain:
             s = computed_hash.startswith('0' * Blockchain.difficulty)
             if(s):
                 if(self.is_valid_proof(block, computed_hash)):
-                    asyncio.run(self.submit( block, computed_hash))
-                    return[computed_hash,  nonce, block]
+                    try:
+                        asyncio.run(self.submit( block, computed_hash))
+                    except KeyboardInterrupt:
+                        pass
+                    return True
         return None
     async def submit(self,block, hashz):
+        #print('submit')
         uri = "ws://" + str(sys.argv[6])
+    
         async with websockets.connect(uri) as websocket:
             await websocket.send(json.dumps({'type': 'submitShare', 'data':[self.name, [block.__dict__, hashz]]}))
             if(await websocket.recv() == 'true'):
@@ -102,29 +106,30 @@ class Blockchain:
                           transactions=self.unconfirmed_transactions,
                           timestamp=time.time(),
                           previous_hash=last_block.hash)
-        count = multiprocessing.cpu_count()
-        n =2**64 /multiprocessing.cpu_count()
+        count = 16
+        n =2**64 /count
 
         #print(n)
         data = []
         self.new_block = new_block
-        for i in range(16):
+        for i in range(count):
             data.append( [self.nonce[0] +i*n, self.nonce[0] +(i+1)*n])
-        with Pool(count) as p:
-            
-            #print(data)
-            reslist = p.map(self.proof_of_work, data )
-            p.close()
-            p.join()
+        with multiprocessing.Pool(count) as p:
+            try:
+                reslist = p.map(self.proof_of_work, data )
+            except:
+                p.terminate()
+                p.close()
         for res in reslist:
-            r = (self.is_valid_proof(res[2], res[0]))
-            if(r == True):
-                self.result = res
+            if(res == True):
+                p.terminate()
+                p.close()
+        p.join()
             #print(self.result)
                 #proof =  self.proof_of_work([new_block, self.nonce])
         #self.result = reslist[r.randint(0, len(reslist)-1)]
         #print(self.is_valid_proof(new_block, self.result[0]))
-        self.new_block = self.result[2]
+        
 if __name__ == "__main__":
     multiprocessing.freeze_support()
     transaction = (sys.argv[1])
@@ -133,10 +138,8 @@ if __name__ == "__main__":
     
     difficulty = json.loads(sys.argv[5])
     name = sys.argv[7]
-    blockchain = Blockchain(chain, transaction, nonce, difficulty, name)
-    uri = "ws://185.245.96.117:8765"
-    async def sendWs():
-        #print(blockchain.result, blockchain.new_block)
-        async with websockets.connect(uri) as websocket:
-            await websocket.send(json.dumps({'type': 'submitShare', 'data':[name, [blockchain.new_block.__dict__, blockchain.result[0]]]}))
+    try:
+        blockchain = Blockchain(chain, transaction, nonce, difficulty, name)
+    except:
+        pass
     #asyncio.run(sendWs())

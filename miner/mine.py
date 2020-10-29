@@ -8,7 +8,6 @@ import requests
 import multiprocessing
 import string
 import random
-from numba import njit, prange
 import os
 import time
 import random as r
@@ -68,7 +67,6 @@ class Blockchain:
     def is_valid_proof(self, block, block_hash):
         return (block_hash.startswith('0' * Blockchain.difficulty) and
                 block_hash == block.compute_hash())
-    @njit(parallel=True)
     def proof_of_work(self, nonce):
         #print('proof')
         block = self.new_block

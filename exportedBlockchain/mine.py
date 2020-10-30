@@ -51,11 +51,10 @@ class Blockchain:
         self.nonce = nonce
         self.result = []
         self.name = name
-        #self.ws = websockets.connect(uri)
+        
+        self.difficulty = int(difficulty)
         self.new_block = []
         self.mine()
-        self.difficulty = int(difficulty)
-        #self.initMining()
     def create_genesis_block(self):
         genesis_block = Block(0, [], time.time(), "0")
         genesis_block.hash = genesis_block.compute_hash()
@@ -70,33 +69,31 @@ class Blockchain:
                 block_hash == block.compute_hash())
 
     def proof_of_work(self, nonce):
-        print('proof')
         block = self.new_block
-        #print(block.transactions, block.index, block.previous_hash, block.timestamp)
-        #nonce = args[0]# range
-        #print(nonce)
         for nonce in range(int(nonce[0]), int(nonce[1])):
             block.nonce = nonce
-            computed_hash = block.compute_hash()
-            s = computed_hash.startswith('0' * Blockchain.difficulty)
+            try:
+                computed_hash = block.compute_hash()
+            except:
+                pass
+            try:
+                s = computed_hash.startswith('0' * Blockchain.difficulty)
+            except:
+                pass
             if(s):
                 if(self.is_valid_proof(block, computed_hash)):
                     try:
                         asyncio.run(self.submit( block, computed_hash))
                     except KeyboardInterrupt:
                         pass
-                    return True
+                    return [block, computed_hash]
         return None
     async def submit(self,block, hashz):
         #print('submit')
         uri = "ws://" + str(sys.argv[6])
-    
         async with websockets.connect(uri) as websocket:
             await websocket.send(json.dumps({'type': 'submitShare', 'data':[self.name, [block.__dict__, hashz]]}))
-            if(await websocket.recv() == 'true'):
-                print('Share Accepted')
     def mine(self):
-        print('mine')
         if not self.unconfirmed_transactions:
             return False
         last_block = self.last_block
@@ -106,7 +103,7 @@ class Blockchain:
                           transactions=self.unconfirmed_transactions,
                           timestamp=time.time(),
                           previous_hash=last_block.hash)
-        count = 16
+        count = multiprocessing.cpu_count()
         n =2**64 /count
 
         #print(n)
@@ -117,18 +114,12 @@ class Blockchain:
         with multiprocessing.Pool(count) as p:
             try:
                 reslist = p.map(self.proof_of_work, data )
-            except:
+            except :
                 p.terminate()
-                p.close()
         for res in reslist:
             if(res == True):
                 p.terminate()
-                p.close()
         p.join()
-            #print(self.result)
-                #proof =  self.proof_of_work([new_block, self.nonce])
-        #self.result = reslist[r.randint(0, len(reslist)-1)]
-        #print(self.is_valid_proof(new_block, self.result[0]))
         
 if __name__ == "__main__":
     multiprocessing.freeze_support()
@@ -140,6 +131,6 @@ if __name__ == "__main__":
     name = sys.argv[7]
     try:
         blockchain = Blockchain(chain, transaction, nonce, difficulty, name)
-    except:
+    except :
         pass
     #asyncio.run(sendWs())

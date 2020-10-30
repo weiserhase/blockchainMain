@@ -21,18 +21,25 @@ class Handler:
     def main(self, message):
         message = json.loads(message)
         if(message['type'] == 'newJob'):
+            print('New Job accepted')
             if(self.last != 0):
-                os.kill(self.last, signal.CTRL_C_EVENT)
+                try:
+                    os.kill(self.last, signal.CTRL_C_EVENT)
+                except :
+                    pass
             #print('newJob')
             executable = "c:/Users/Jan/Documents/GitHub/python_test/blockchain/exportedBlockchain/mine.py"
             #print(message['data'])
             try:
                 self.process = subprocess.Popen(['python', executable, json.dumps(message['data'][0]),json.dumps(message['data'][1]), json.dumps(message['data'][2]),  json.dumps(message['data'][3]), json.dumps(message['data'][4]), sys.argv[1],sys.argv[2]], stdin=None, stdout=None, stderr=None)           
-            except:
+            except :
                 pass
-            print('process started')
             pid = self.process.pid
             self.last = pid
+        
+        if(message['type'] == 'share'):
+            print('Share '+str(message['data']['status'])+' by Pool! You submitted '+ str(message['data']['accepted'])+ ' accepted shares; '+ str(message['data']['rejected']) +' rejected;')
+            pass
 
 
 handler = Handler()
@@ -52,12 +59,20 @@ async def recv():
         await websocket.send(json.dumps({'type': 'registerMiner', 'data':{'name':sys.argv[2], 'hashrate':hashrate}}))
         print('registered on Pool with username: ' +name + 'with a hashrate of: ' +str(hashrate) +' MHash/s')
         async for message in websocket:
-            print(message)
-            if(json.loads(message)['type'] == 'newJob'):
-                handler.main(message)
-            
-            if(json.loads(message)['type'] == 'exit'):
-                continue
+            try:
+                if(message == 'null'):
+                    pass
+                if(json.loads(message)['type'] == 'newJob'):
+                    handler.main(message)
+                
+                if(json.loads(message)['type'] == 'exit'):
+                    continue
+                
+                if(json.loads(message)['type'] == 'share'):
+                    handler.main(message)
+                    continue
+            except:
+                pass
 
 
 if __name__ == "__main__":
@@ -69,10 +84,10 @@ if __name__ == "__main__":
     for i in range(multiprocessing.cpu_count()):
         data.append(size)
     start = time.time()
-    with Pool(16) as p:
         #p.map(has, data)
-        print((time.time()-start))
-    hashrate = (1/(time.time()-start))
+    print((time.time()-start))
+    #hashrate = (1/(time.time()-start))
+    hashrate = 100
     print('mining with:'+str(hashrate))
     multiprocessing.freeze_support()
     try:

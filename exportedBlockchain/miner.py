@@ -18,26 +18,46 @@ class Handler:
     def __init__(self):
         self.last = 0
         self.process = ''
-    def main(self, message):
+        self.term = False
+    async def proc(self):
+        out = self.process.stdout.read()
+        print('#################')
+        os.kill(self.last, signal.CTRL_C_EVENT)
+
+    async def main(self, message):
         message = json.loads(message)
         if(message['type'] == 'newJob'):
             print('New Job accepted')
             if(self.last != 0):
                 try:
-                    os.kill(self.last, signal.CTRL_C_EVENT)
+                    print('die 2')
+                    if(self.process.returncode != None):
+                        self.process.terminate()
+                    #else:
+                        #while self.process.returncode == None:
+                            #print(self.process.returncode)
+                            #pass
+                    #os.kill(self.last, signal.CTRL_C_EVENT)
                 except :
                     pass
-            #print('newJob')
+            print('newJob')
             executable = "c:/Users/Jan/Documents/GitHub/python_test/blockchain/exportedBlockchain/mine.py"
-            #print(message['data'])
             try:
-                self.process = subprocess.Popen(['python', executable, json.dumps(message['data'][0]),json.dumps(message['data'][1]), json.dumps(message['data'][2]),  json.dumps(message['data'][3]), json.dumps(message['data'][4]), sys.argv[1],sys.argv[2]], stdin=None, stdout=None, stderr=None)           
+                self.process = subprocess.Popen(['python', executable, json.dumps(message['data'][0]),json.dumps(message['data'][1]), json.dumps(message['data'][2]),  json.dumps(message['data'][3]), json.dumps(message['data'][4]), sys.argv[1],sys.argv[2]], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None)           
+                #for i in self.process.stdout.read():
+                    #print(i)
             except :
                 pass
             pid = self.process.pid
             self.last = pid
         
         if(message['type'] == 'share'):
+            print('')
+            if(message['data']['status'] == 'Declined'):
+                if(self.term == True):
+                    self.term = True
+                    self.process.terminate()
+                
             print('Share '+str(message['data']['status'])+' by Pool! You submitted '+ str(message['data']['accepted'])+ ' accepted shares; '+ str(message['data']['rejected']) +' rejected;')
             pass
 
@@ -59,17 +79,18 @@ async def recv():
         await websocket.send(json.dumps({'type': 'registerMiner', 'data':{'name':sys.argv[2], 'hashrate':hashrate}}))
         print('registered on Pool with username: ' +name + 'with a hashrate of: ' +str(hashrate) +' MHash/s')
         async for message in websocket:
+            print(message)
             try:
                 if(message == 'null'):
                     pass
                 if(json.loads(message)['type'] == 'newJob'):
-                    handler.main(message)
+                    await  (handler.main(message))
                 
                 if(json.loads(message)['type'] == 'exit'):
                     continue
                 
                 if(json.loads(message)['type'] == 'share'):
-                    handler.main(message)
+                    await  (handler.main(message))
                     continue
             except:
                 pass

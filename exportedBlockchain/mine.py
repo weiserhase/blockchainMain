@@ -32,8 +32,12 @@ class Block:
         #print(self)
 
     def compute_hash(self):
-        block_string = json.dumps(self.__dict__, sort_keys=True)
-        return sha512(block_string.encode()).hexdigest()
+        try:
+            block_string = json.dumps(self.__dict__, sort_keys=True)
+            result = sha512(block_string.encode()).hexdigest()
+        except:
+            pass
+        return result
 
 
 class Blockchain:
@@ -69,6 +73,7 @@ class Blockchain:
                 block_hash == block.compute_hash())
 
     def proof_of_work(self, nonce):
+        #print('prof')
         block = self.new_block
         for nonce in range(int(nonce[0]), int(nonce[1])):
             block.nonce = nonce
@@ -84,15 +89,20 @@ class Blockchain:
                 if(self.is_valid_proof(block, computed_hash)):
                     try:
                         asyncio.run(self.submit( block, computed_hash))
+                        print('submitted')
+                        sys.stdout.write('test')
                     except KeyboardInterrupt:
                         pass
                     return [block, computed_hash]
         return None
     async def submit(self,block, hashz):
-        #print('submit')
-        uri = "ws://" + str(sys.argv[6])
-        async with websockets.connect(uri) as websocket:
-            await websocket.send(json.dumps({'type': 'submitShare', 'data':[self.name, [block.__dict__, hashz]]}))
+        print('submit ' + str(os.getpid()))
+        try:
+            uri = "ws://" + str(sys.argv[6])
+            async with websockets.connect(uri) as websocket:
+                await websocket.send(json.dumps({'type': 'submitShare', 'data':[self.name, [block.__dict__, hashz]]}))
+        except:
+            pass
     def mine(self):
         if not self.unconfirmed_transactions:
             return False
@@ -103,6 +113,7 @@ class Blockchain:
                           transactions=self.unconfirmed_transactions,
                           timestamp=time.time(),
                           previous_hash=last_block.hash)
+        print('Mining new Block' + str(new_block.index))
         count = multiprocessing.cpu_count()
         n =2**64 /count
 
@@ -111,14 +122,20 @@ class Blockchain:
         self.new_block = new_block
         for i in range(count):
             data.append( [self.nonce[0] +i*n, self.nonce[0] +(i+1)*n])
-        with multiprocessing.Pool(count) as p:
-            try:
-                reslist = p.map(self.proof_of_work, data )
-            except :
-                p.terminate()
+        try:
+            with multiprocessing.Pool(count) as p:
+                try:
+                    reslist = p.map(self.proof_of_work, data)
+                except KeyboardInterrupt:
+                    print('interr')
+                    p.terminate()
+                    p.join
+        except:
+            pass
         for res in reslist:
             if(res == True):
                 p.terminate()
+        print('end')
         p.join()
         
 if __name__ == "__main__":

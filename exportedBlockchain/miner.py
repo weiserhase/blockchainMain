@@ -13,105 +13,123 @@ import time
 import numpy as np
 import sys
 from multiprocessing import Pool
+import config as cfg
+import platform
 
+from hashrate import hahrate
 class Handler:
+    ''' 
+    This class handels socketServer requests and call the functions by the type submited in message
+
+    #Documentation
+    self is not considered as argument because it is automaticly updated and the values are initalised in __init__
+    Objects are marked with ~ infront of them 
+    '''
     def __init__(self):
         self.last = 0
         self.process = ''
         self.term = False
     async def proc(self):
         out = self.process.stdout.read()
-        print('#################')
-        os.kill(self.last, signal.CTRL_C_EVENT)
+        if(platform.system() == 'Windows'):
+            os.kill(self.last, signal.CTRL_C_EVENT)
+        else:
+            os.kill(self.last, signal.SIGKILL)
 
     async def main(self, message):
+        '''
+        this Function is used to handle handle the messages by type in message
+        args:
+            message #submitted to websocketServer
+            ~websocket
+        return:
+            ~  #no json.dumps
+        toDo:
+            None
+        '''
         message = json.loads(message)
         if(message['type'] == 'newJob'):
-            print('New Job accepted')
             if(self.last != 0):
                 try:
-                    print('die 2')
                     if(self.process.returncode != None):
                         self.process.terminate()
-                    #else:
-                        #while self.process.returncode == None:
-                            #print(self.process.returncode)
-                            #pass
-                    #os.kill(self.last, signal.CTRL_C_EVENT)
-                except :
+                except:
                     pass
-            print('newJob')
-            executable = "c:/Users/Jan/Documents/GitHub/python_test/blockchain/exportedBlockchain/mine.py"
+            executable =str(os.path.dirname(os.path.abspath(__file__))).replace("\\", "/") +"/mine.py"
             try:
-                self.process = subprocess.Popen(['python', executable, json.dumps(message['data'][0]),json.dumps(message['data'][1]), json.dumps(message['data'][2]),  json.dumps(message['data'][3]), json.dumps(message['data'][4]), sys.argv[1],sys.argv[2]], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None)           
-                #for i in self.process.stdout.read():
-                    #print(i)
-            except :
+                cfg.config['hash'] = message['data'][5]
+                args = ['python', executable, json.dumps(message['data'][0]),json.dumps(message['data'][1]), json.dumps(message['data'][2]),  json.dumps(message['data'][3]), json.dumps(message['data'][4]), sys.argv[1],sys.argv[2]]
+                print('starting new Job with Difficulty: ' +str(message['data'][4]) )
+                self.process = subprocess.Popen(args , stdin=None, stdout=None, stderr=None)
+            except Exception as e:
+                print('Failed to start Subprocess with Eception:' +str(e) )
                 pass
             pid = self.process.pid
             self.last = pid
         
         if(message['type'] == 'share'):
-            print('')
             if(message['data']['status'] == 'Declined'):
                 if(self.term == True):
                     self.term = True
                     self.process.terminate()
-                
-            print('Share '+str(message['data']['status'])+' by Pool! You submitted '+ str(message['data']['accepted'])+ ' accepted shares; '+ str(message['data']['rejected']) +' rejected;')
+            else:
+                #print('Share '+str(message['data']['status'])+' by Pool! You submitted '+ str(message['data']['accepted'])+ ' accepted shares; '+ str(message['data']['rejected']) +' rejected;', end='\n')
+                pass
             pass
 
 
 handler = Handler()
-def id_generator(size=6, chars=string.ascii_uppercase + string.digits):
-    return ''.join(random.choice(chars) for _ in range(size))
 
-def has(x):
-    res = []
-    for i in range(x):
-        res.append(hashlib.sha256(id_generator(10).encode('utf-8')))
-
-async def recv():
+async def handleMessages():
+    '''
+    this Function is used to handle new Incoming Messages
+    args:
+        ~websocket
+        path #path wich the websocket  
+    return:
+        ~any  #no json.dumps but no class result 
+    toDo:
+        None
+    '''
     uri = "ws://"+str(sys.argv[1])
-    print(uri)
-
-    async with websockets.connect(uri) as websocket:
-        await websocket.send(json.dumps({'type': 'registerMiner', 'data':{'name':sys.argv[2], 'hashrate':hashrate}}))
-        print('registered on Pool with username: ' +name + 'with a hashrate of: ' +str(hashrate) +' MHash/s')
-        async for message in websocket:
-            print(message)
-            try:
-                if(message == 'null'):
+    try:
+        async with websockets.connect(uri) as websocket:
+            await websocket.send(json.dumps({'type': 'registerMiner', 'data':{'name':sys.argv[2], 'hashrate':hashrate}}))
+            print('registered on Pool with username: ' +name + 'with a hashrate of: ' +str(hashrate/1e6) +' MHash/s')
+            async for message in websocket:
+                try:
+                    if(message == 'null'):
+                        pass
+                    if(json.loads(message)['type'] == 'newJob'):
+                        await  (handler.main(message))
+                    
+                    if(json.loads(message)['type'] == 'exit'):
+                        continue
+                    
+                    if(json.loads(message)['type'] == 'share'):
+                        await  (handler.main(message))
+                        continue
+                except:
                     pass
-                if(json.loads(message)['type'] == 'newJob'):
-                    await  (handler.main(message))
-                
-                if(json.loads(message)['type'] == 'exit'):
-                    continue
-                
-                if(json.loads(message)['type'] == 'share'):
-                    await  (handler.main(message))
-                    continue
-            except:
-                pass
+    except:
+        pass
 
 
 if __name__ == "__main__":
+    #mainloop for starting the recv
     ip = sys.argv[0]
     name = sys.argv[1]
-    #print(sys.argv)
-    size = int(1e6/multiprocessing.cpu_count())
+    size = int(multiprocessing.cpu_count())
     data = []
     for i in range(multiprocessing.cpu_count()):
         data.append(size)
     start = time.time()
-        #p.map(has, data)
     print((time.time()-start))
     #hashrate = (1/(time.time()-start))
-    hashrate = 100
-    print('mining with:'+str(hashrate))
+    hashrate = hahrate()
+    print('mining with: '+str(hashrate))
     multiprocessing.freeze_support()
     try:
-        asyncio.get_event_loop().run_until_complete(recv())
+        asyncio.get_event_loop().run_until_complete(handleMessages())
     except KeyboardInterrupt:
         pass

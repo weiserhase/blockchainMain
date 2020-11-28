@@ -11,6 +11,7 @@ import requests
 import math
 import sys
 import mysql.connector as con
+import os
 
 from conversion import Conversion as cv
 class MiningPool:
@@ -38,6 +39,7 @@ class MiningPool:
         self.validBlock = self.blockchain.last_block.index +1
         self.suspendedMiners = {}
         self.bundledTransactions = []
+        self.chainData = []
         self.watchers = []
         self.cv = cv()
         self.db = con.connect(
@@ -49,6 +51,20 @@ class MiningPool:
         self.cursor = self.db.cursor()
         self.reinitialiseMiners()
     #Pool Functions
+    def updateConsole(self):
+        rows, columns = os.popen('stty size', 'r').read().split()
+        st = 's'
+        #r1 + r2 = r3
+        r1w = 1//4*columns-1
+        r2w = 1//4*columns-1
+        r3w = 1//2*columns-1
+        #construct array of rows 
+        data = []
+
+        for i in range(rows):
+            st += '#'
+        print(st)
+
     def bundleTransactions(self):
         size = self.cv.byteConversion(cfg.config['blockSize'], cfg.config['blockSizeUnit'], 'b') 
         transactionCollection = []
@@ -59,15 +75,23 @@ class MiningPool:
             #print(transactionCollection)
             if(sys.getsizeof(transactionCollection) >= size):
                 for transact in transactionCollection:
-                    fee += transact['fee']
+                    try:
+                        #print(transact['fee'])
+                        fee += transact['fee']
+                    except:
+                        pass
                 self.bundledTransactions.append([fee,transactionCollection])
                 transactionCollection = []
-                fee = []
-            if(i == len(self.openTransactions)-1):
+
+                fee = 0
+            elif(i == len(self.openTransactions)-1):
                 for transact in transactionCollection:
-                    #print(transact)
-                    fee += transact['fee']
+                    try:
+                        fee += transact['fee']
+                    except:
+                        pass
                 self.bundledTransactions.append([fee,transactionCollection])
+
         self.openTransactions = []
 
 
@@ -83,6 +107,7 @@ class MiningPool:
         #Generate New Jobs 
         self.openJobs = []
         self.bundleTransactions()
+        #print(self.bundledTransactions)
         self.bundledTransactions = sorted(self.bundledTransactions, key=lambda k: k[0], reverse=True)
         #check if there is a new Transaction in Queue
         if(len(self.bundledTransactions) == 0):
@@ -103,11 +128,12 @@ class MiningPool:
         
         #print(str(self.blockchain.last_block.__dict__))
         print('Job created with Index: '+ str(self.blockchain.last_block.index +1)+ ' and Difficulty: ' + str(self.blockchain.difficulty))
+        print(str(len(self.bundledTransactions)) +' Blocks are in queue with a size of bytes ' +str(self.cv.byteConversion(sys.getsizeof(str(self.bundledTransactions)), 'b', 'kb')) +'kb with a size of ' + str(self.cv.byteConversion(sys.getsizeof(str(self.bundledTransactions[0])), 'b', 'kb') )+'kb')
         for i in range(len(self.miners)):
             start = i*perMiner
             data.append([self.bundledTransactions[0][1], json.dumps([self.blockchain.last_block.__dict__]), start,  start+ perMiner, self.blockchain.difficulty, cfg.config['hash']])
         self.openJobs = data 
-        
+        self.chainData = [self.bundledTransactions[0][1], json.dumps(self.blockchain.last_block.__dict__)]
         self.start = time.time()
         #send Data to Miners 
         for index in range(len(self.openJobs)):
@@ -150,7 +176,7 @@ class MiningPool:
                 await websocket.send(json.dumps({'type':'newJob', 'data':self.openJobs[0]}))
         else:
             self.rewards[args['name']] = 0
-            self.miners[args['name']] = ([websocket, [0,0,args['hashrate'], time.time(), [args['hashrate'] ]]])
+            self.miners[args['name']] = ([websocket, [0,0,args['hashrate'], time.time(), []]])
             #calculate the Total Hashing Power of the Pool
             for miner in self.miners:
                 self.totalHashingPower += args['hashrate']
@@ -251,7 +277,7 @@ class MiningPool:
             #Calculate new Difficulty
             #The Difficulty is calculated based on the last 10(conf) submitted blocks
             #Difficulty should be arround 
-            tfeb = 5 #time for every block in s
+            tfeb = 30 #time for every block in s
             lastdiff = self.blockchain.difficulty
             diff = math.log((1 /(self.totalHashingPower*tfeb)), (1/16))
             tfeb = 1/((1/16)**self.blockchain.difficulty*self.totalHashingPower) 
@@ -360,6 +386,10 @@ class Handler:
             result = self.miningPool.watchers.remove(websocket)
             return result
         
+        if(message['type'] == "getData"):
+            result = self.miningPool.chainData
+            return result
+        
         args = message['data']
         if(message['type'] == "registerMiner"):
             result = await self.miningPool.registerMiner((args), websocket)
@@ -394,32 +424,33 @@ async def handleClient(websocket, path):
         None
     '''
     name = ''
-    #try:
-    connections.append(websocket)
-    async for message in websocket:
-        #does this coroutine every time a message arrives
-        if(json.loads(message)['type'] == "disconnect"):
+    try:
+        connections.append(websocket)
+        async for message in websocket:
+            #does this coroutine every time a message arrives
+            if(json.loads(message)['type'] == "disconnect"):
+                connections.remove(websocket)
+                await handler.miningPool.suspendedMiner(name)
+                return
+            result = await handler.main(message, websocket)
+            try:
+                name = result['name']
+            except:
+                pass
+            if(result != {}):
+                await websocket.send(json.dumps(result))
+        connections.remove(websocket)
+        await handler.miningPool.suspendedMiner(name)
+    except Exception as e:
+        if(name == ''):
+            print('canceling Connection to '+ str(name), ' |Exception :' +str(e))
+            #if connection closes abnormaly 
             connections.remove(websocket)
             await handler.miningPool.suspendedMiner(name)
             return
-        result = await handler.main(message, websocket)
-        try:
-            name = result['name']
-        except:
-            pass
-        if(result != {}):
-            await websocket.send(json.dumps(result))
-    connections.remove(websocket)
-    await handler.miningPool.suspendedMiner(name)
-    '''
-    except:
-        print('canceling Connection to '+ str(name))
-        #if connection closes abnormaly 
-        connections.remove(websocket)
-        await handler.miningPool.suspendedMiner(name)
-        return
-    '''
-    return
+        else:
+            print('canceling Connection because of Exception :' +str(e))
+    
 
 async def debug(websocket, path):
     '''
@@ -449,6 +480,7 @@ async def debug(websocket, path):
             await websocket.send(json.dumps(result))
     connections.remove(websocket)
     await handler.miningPool.suspendedMiner(name)
+    return
 import config as cfg
 if __name__ == "__main__":
     #port where miners register
@@ -469,5 +501,3 @@ if __name__ == "__main__":
         asyncio.get_event_loop().run_forever()
     except:
         pass
-
-

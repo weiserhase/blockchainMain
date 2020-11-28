@@ -73,6 +73,7 @@ class Blockchain:
         ]
         self.difficulty = cfg.config['initDifficulty']
         self.change = False
+        self.quit = False
     def createGenesisBlock(self):
         '''
         This Function is used to generate a Genesis Block(initalise the first Block Genesis)
@@ -93,6 +94,7 @@ class Blockchain:
         sql = 'SELECT ind, data, timestampReal, prevHash, nonce FROM chain'
         cursor.execute(sql)
         data = cursor.fetchall()
+        #print(data)
         if(len(data) != 0):
             for i in range(len(data)):
                 block = Block(int(data[i][0]),json.loads(data[i][1]), int(data[i][2]), data[i][3], int(data[i][4]))
@@ -107,6 +109,7 @@ class Blockchain:
             val = (block['index'], json.dumps(block['transactions']), block['previous_hash'], block['nonce'], block['timestamp'], 0, 'init', time.time(), 'True', cfg.config['initDifficulty'])
             cursor.execute(sql, val)
             db.commit()
+            self.quit = True
 
     @property
     def last_block(self):
@@ -135,7 +138,6 @@ class Blockchain:
         self.change = True
         previous_hash = self.last_block.compute_hash()
         if previous_hash != block.previous_hash:
-
             print('0x1')
             self.change = False
             

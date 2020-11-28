@@ -13,7 +13,10 @@ class Conversion():
             byte = value*2**30
         elif(form == 'tb'):
             byte = value*2**40
-        print(byte)
+        else:
+            byte = value
+            
+            
         if(target == 'b'):
             return byte
         elif(target == 'kb'):

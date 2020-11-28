@@ -11,7 +11,7 @@ async def chain():
     uri = "ws://185.245.96.117:8765"
     async with websockets.connect(uri) as websocket:
         #name = input("Function?: ")
-        name = {'type':'getChain' }
+        name = {'type':'getChain'}
         await websocket.send(json.dumps(name))
 
         greeting = await websocket.recv()
@@ -23,7 +23,7 @@ async def hello():
         print(websocket)
         #name = input("Function?: ")
         data = []
-        for i in range(20):
+        for i in range(20000):
             data.append({'name': id_generator(6), 'fee': random.random()})
         msg = {'type':'newTransaction','data':data}
         await websocket.send(json.dumps(msg))

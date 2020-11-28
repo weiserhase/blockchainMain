@@ -80,8 +80,11 @@ class Blockchain:
         pass
     def __init__(self, chain, transaction, nonce, difficulty, name):
         self.ch = []
-        chain = json.loads(chain)
+        #print(chain)
+        chain = [json.loads(chain)]
+        #print(chain)
         for block in chain:
+            #print(block)
             bl = Block(block['index'], block['transactions'], block['timestamp'], block['previous_hash'], block['nonce'])
             #bl.hash = bl.compute_hash()
             self.ch.append(bl)
@@ -131,6 +134,7 @@ class Blockchain:
                     return True
 
     def proof_of_work(self, nonce):  
+        #print('proof')
         '''
         This Function is used to try out a nonce wich gives a hash with difficulty = (number of leadingZeros) of the hashed block
         args:
@@ -150,6 +154,7 @@ class Blockchain:
             for nonce in range(int(nonce[0]), int(nonce[1])):
                 if(self.kill == True):
                     exit()
+                    raise Exception
                     return 'kill'
                 #if(nonce%3000 == 0):
                     #print('true')
@@ -179,7 +184,7 @@ class Blockchain:
             None
             this function sends the data to the Pool
         toDo:
-            optimize the way to cancel the MinerPool #2
+            Done~optimize the way to cancel the MinerPool #2
             optimize the MinerPool speed #3
         '''
         try:
@@ -223,9 +228,10 @@ class Blockchain:
             try:
                 #print('test')
                 reslist = p.map(self.proof_of_work, data)
-            except KeyboardInterrupt:
+            except :
+                return
                 p.terminate()
-                p.join()
+                #p.join()
             p.terminate()
             p.join()
             for res in reslist:
@@ -235,15 +241,23 @@ class Blockchain:
             #print('Failed to run Pool')
             #pass
         p.join()
+async def getChainData(uri):
+    async with websockets.connect(uri) as websocket:
+        await websocket.send(json.dumps({'type': 'getData'}))
+        async for message in websocket:
+            message = json.loads(message)
+            #print('#########')
+            chain = (message)[0]
+            transaction = (message)[1]
+            return [chain, transaction]
+            
 if __name__ == "__main__":
-    #try:
     multiprocessing.freeze_support()
-    transaction = (sys.argv[1])
-    chain = json.loads(sys.argv[2])
+    uri = (sys.argv[1])
+    res = asyncio.run(getChainData(uri))
+    chain = res[1]
+    transaction = res[0]
     nonce = [json.loads(sys.argv[3]), json.loads(sys.argv[4])]
-    
     difficulty = json.loads(sys.argv[5])
     name = sys.argv[7]
     blockchain = Blockchain(chain, transaction, nonce, difficulty, name)
-    #except:
-        #print('failed to start the Miner instance')

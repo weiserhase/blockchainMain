@@ -4,6 +4,8 @@ import random
 import json
 import blockchain as Bl
 blockchain = Bl.Blockchain()
+if(blockchain.quit == True):
+    blockchain = Bl.Blockchain()
 Block = Bl.Block
 '''
 This File is Used to create a link between blockchain.py and miningPool.py 

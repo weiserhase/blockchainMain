@@ -29,6 +29,7 @@ class Handler:
         self.last = 0
         self.process = ''
         self.term = False
+        self.change = []
     async def proc(self):
         out = self.process.stdout.read()
         if(platform.system() == 'Windows'):
@@ -36,7 +37,7 @@ class Handler:
         else:
             os.kill(self.last, signal.SIGKILL)
 
-    async def main(self, message):
+    async def main(self, message, websocket):
         '''
         this Function is used to handle handle the messages by type in message
         args:
@@ -48,6 +49,9 @@ class Handler:
             None
         '''
         message = json.loads(message)
+        if(message['type'] == 'getData'):
+            websocket.send(json.dumps(self.change))
+
         if(message['type'] == 'newJob'):
             if(self.last != 0):
                 try:
@@ -58,7 +62,9 @@ class Handler:
             executable =str(os.path.dirname(os.path.abspath(__file__))).replace("\\", "/") +"/mine.py"
             try:
                 cfg.config['hash'] = message['data'][5]
-                args = ['python', executable, json.dumps(message['data'][0]),json.dumps(message['data'][1]), json.dumps(message['data'][2]),  json.dumps(message['data'][3]), json.dumps(message['data'][4]), sys.argv[1],sys.argv[2]]
+                self.change = [json.dumps(message['data'][0]), json.dumps(message['data'][1])]
+                args = ['python', executable, "ws://"+str(sys.argv[1]),'', json.dumps(message['data'][2]),  json.dumps(message['data'][3]), json.dumps(message['data'][4]), sys.argv[1],sys.argv[2]]
+                    
                 print('starting new Job with Difficulty: ' +str(message['data'][4]) )
                 self.process = subprocess.Popen(args , stdin=None, stdout=None, stderr=None)
             except Exception as e:
@@ -100,14 +106,15 @@ async def handleMessages():
                 try:
                     if(message == 'null'):
                         pass
+                    
                     if(json.loads(message)['type'] == 'newJob'):
-                        await  (handler.main(message))
+                        await  (handler.main(message, websocket))
                     
                     if(json.loads(message)['type'] == 'exit'):
                         continue
                     
                     if(json.loads(message)['type'] == 'share'):
-                        await  (handler.main(message))
+                        await  (handler.main(message, websocket))
                         continue
                 except:
                     pass

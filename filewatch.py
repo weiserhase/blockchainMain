@@ -7,12 +7,15 @@ import subprocess
 import signal
 import time
 def restartWebsocket():
+    print('Datei wurde Geändert')
+    '''
     executable = "c:/Users/Jan/Documents/GitHub/python_test/blockchain/pool/miningPool.py "
     process = subprocess.Popen(['python.exe', executable], stdin=None, stdout=None, stderr=None)
     pid = process.pid
     #print(process.pid)
     return[process, pid]
-
+    '''
+    return[0,0]
 class Event(LoggingEventHandler):
     def __init__(self):
 
@@ -22,7 +25,7 @@ class Event(LoggingEventHandler):
 
         
     def dispatch(self, event):
-        os.kill(self.pid, signal.SIGTERM)
+        #os.kill(self.pid, signal.SIGTERM)
         new = restartWebsocket()
         self.process = new[0]
         self.pid = new[1]

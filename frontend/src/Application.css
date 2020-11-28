@@ -1,0 +1,16 @@
+.blockList{ 
+       
+}
+.tall{
+    margin: 1rem;
+    height: 88vh;
+}
+.small{
+    margin: 2rem;
+    height: 42vh;
+}
+#grid{
+}
+#blockListContainer{
+    width: 100%;
+}

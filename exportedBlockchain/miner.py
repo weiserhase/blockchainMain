@@ -11,6 +11,7 @@ import random
 import string
 import time
 import numpy as np
+
 import sys
 from multiprocessing import Pool
 import config as cfg
@@ -139,4 +140,6 @@ if __name__ == "__main__":
     try:
         asyncio.get_event_loop().run_until_complete(handleMessages())
     except KeyboardInterrupt:
+        print('stopping Miner')
+        exit()
         pass

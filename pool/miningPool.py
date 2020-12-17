@@ -43,40 +43,35 @@ class MiningPool:
         self.watchers = []
         self.cv = cv()
         self.db = con.connect(
-            host= 'localhost',
-            user = 'root',
-            password = 'mpgsas2020',
-            database = 'blockchain'
+            host= cfg.config['dbHost'],
+            user = cfg.config['dbUser'],
+            password = cfg.config['dbPassword'],
+            database = cfg.config['dbDatabaseName']
         )
         self.cursor = self.db.cursor()
         self.reinitialiseMiners()
     #Pool Functions
-    def updateConsole(self):
-        rows, columns = os.popen('stty size', 'r').read().split()
-        st = 's'
-        #r1 + r2 = r3
-        r1w = 1//4*columns-1
-        r2w = 1//4*columns-1
-        r3w = 1//2*columns-1
-        #construct array of rows 
-        data = []
-
-        for i in range(rows):
-            st += '#'
-        print(st)
 
     def bundleTransactions(self):
+        '''This Functions Bundles Transactions in Chunks with the size Specified in the Config File
+        args:
+            None
+        return:
+            None
+        toDo:
+            Done~Sort Jobs by Fee #1
+        '''
         size = self.cv.byteConversion(cfg.config['blockSize'], cfg.config['blockSizeUnit'], 'b') 
         transactionCollection = []
         fee = 0
+        #Append Transactions to bundledTransactions 
         for i in range(len(self.openTransactions)):
             transaction = self.openTransactions[i]
             transactionCollection.append(transaction)
-            #print(transactionCollection)
+            #if check if the collection is big enough
             if(sys.getsizeof(transactionCollection) >= size):
                 for transact in transactionCollection:
                     try:
-                        #print(transact['fee'])
                         fee += transact['fee']
                     except:
                         pass
@@ -107,7 +102,6 @@ class MiningPool:
         #Generate New Jobs 
         self.openJobs = []
         self.bundleTransactions()
-        #print(self.bundledTransactions)
         self.bundledTransactions = sorted(self.bundledTransactions, key=lambda k: k[0], reverse=True)
         #check if there is a new Transaction in Queue
         if(len(self.bundledTransactions) == 0):
@@ -125,8 +119,6 @@ class MiningPool:
         perMiner = ma/len(self.miners)
         data = []
         #create data for each miner
-        
-        #print(str(self.blockchain.last_block.__dict__))
         print('Job created with Index: '+ str(self.blockchain.last_block.index +1)+ ' and Difficulty: ' + str(self.blockchain.difficulty))
         print(str(len(self.bundledTransactions)) +' Blocks are in queue with a size of bytes ' +str(self.cv.byteConversion(sys.getsizeof(str(self.bundledTransactions)), 'b', 'kb')) +'kb with a size of ' + str(self.cv.byteConversion(sys.getsizeof(str(self.bundledTransactions[0])), 'b', 'kb') )+'kb')
         for i in range(len(self.miners)):
@@ -141,11 +133,21 @@ class MiningPool:
         for watcher in self.watchers:
             await watcher.send(json.dumps('kill'))
     def reinitialiseMiners(self):
+        '''This Function Initialises Miners that were registered and saved to db
+        args:
+            None
+        return:
+            None
+        toDo:
+            None
+        '''
         sql = 'SELECT  name, hashrate, acceptedShares, rejectedShares, payout FROM miners '
         self.cursor.execute(sql)
         data = self.cursor.fetchall()
         for miner in data:
             #print(miner)
+            if(miner[0]in self.suspendedMiners.keys()):
+                continue
             self.suspendedMiners[miner[0]] = ['websocketObject', [int(miner[2]),int(miner[3]),float(miner[1]), time.time(), [float(miner[1]) ]]]
             self.rewards[miner[0]] = float(miner[4])
     async def registerMiner(self, args, websocket):
@@ -163,6 +165,10 @@ class MiningPool:
         toDo:
             None
         '''
+        sql = 'SELECT  name, hashrate, acceptedShares, rejectedShares, payout FROM miners WHERE name = %s'
+        values= [args['name']]
+        self.cursor.execute(sql, values)
+        data = self.cursor.fetchall()
         if args['name'] in self.suspendedMiners.keys():
             self.miners[args['name']]  = self.suspendedMiners[args['name']]
             self.miners[args['name']][0] = websocket
@@ -170,11 +176,13 @@ class MiningPool:
             print('miner "'+str(args["name"]) +'" reregistered mining with a hashrate of: ' +str(args['hashrate']/1e6) +str("MHash"))
             if(self.openJobs == []):
                 await self.generateNewJob()
+                if(self.openJobs != []):
+                    await websocket.send(json.dumps({'type':'newJob', 'data':self.openJobs[0]}))
                 return {'type': 'exit'}
             else:
                 #send Job to Miner
                 await websocket.send(json.dumps({'type':'newJob', 'data':self.openJobs[0]}))
-        else:
+        elif(len(data) == 0):
             self.rewards[args['name']] = 0
             self.miners[args['name']] = ([websocket, [0,0,args['hashrate'], time.time(), []]])
             #calculate the Total Hashing Power of the Pool
@@ -191,6 +199,8 @@ class MiningPool:
             else:
                 #send Job to Miner
                 await websocket.send(json.dumps({'type':'newJob', 'data':self.openJobs[0]}))
+        else:
+            raise Exception('miner cannot be registered')
     async def suspendedMiner(self, name):
         try:
             self.suspendedMiners[name] = self.miners[name]
@@ -246,8 +256,6 @@ class MiningPool:
             delta = time.time()-self.start
             
             self.miners[args[0]][1][4].append((args[2]*16)/delta)
-            #print(self.miners[args[0]][1][4])
-            #print(self.miners[args[0]][1][4])
             c = cfg.config['lastHashes']
             total = 0
             div = 0
@@ -376,9 +384,17 @@ class Handler:
             None
         '''
         message = json.loads(message)
+        #frontend calls
         if(message['type'] == "getChain"):
-            result = await self.miningPool.getChain()
+            result = {'type': 'chainData', 'data':await self.miningPool.getChain()}
             return result
+        if(message['type'] =='getMinerData'):
+            result = {'type': 'minerData', 'data':[self.miningPool.miners , self.miningPool.suspendedMiners]}
+            return result
+        if(message['type'] == 'getGlobalStats'):
+            data = {'totalHashingPower': self.miningPool.totalHashingPower}
+            result = {'type': 'globalStats', 'data':data}
+        #Watcher/Listeners
         if(message['type'] == "registerWatcher"):
             result = self.miningPool.watchers.append(websocket)
             return result
@@ -389,7 +405,7 @@ class Handler:
         if(message['type'] == "getData"):
             result = self.miningPool.chainData
             return result
-        
+        #Miners 
         args = message['data']
         if(message['type'] == "registerMiner"):
             result = await self.miningPool.registerMiner((args), websocket)
@@ -419,7 +435,7 @@ async def handleClient(websocket, path):
         ~websocket
         path #path wich the websocket  
     return:
-        ~any  #no json.dumps but no class result 
+    None
     toDo:
         None
     '''
@@ -442,24 +458,25 @@ async def handleClient(websocket, path):
         connections.remove(websocket)
         await handler.miningPool.suspendedMiner(name)
     except Exception as e:
-        if(name == ''):
+        if(name != ''):
             print('canceling Connection to '+ str(name), ' |Exception :' +str(e))
             #if connection closes abnormaly 
             connections.remove(websocket)
             await handler.miningPool.suspendedMiner(name)
             return
         else:
-            print('canceling Connection because of Exception :' +str(e))
+            #print('canceling Connection because of Exception :' +str(e))
+            return
     
 
 async def debug(websocket, path):
     '''
-    this Function is used to handle new Incoming Messages
+    Debug Function to throw Errors 
     args:
         ~websocket
         path #path wich the websocket  
     return:
-        ~any  #no json.dumps but no class result 
+        None
     toDo:
         None
     '''

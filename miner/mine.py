@@ -1,95 +1,218 @@
-from hashlib import sha512
+from hashlib import sha512, sha256
 import json
 import time
 import websockets
-
-#from flask import Flask, request
 import requests
 import multiprocessing
 import string
 import random
+import signal
 import os
 import time
 import random as r
 import sys
 import asyncio
-from multiprocessing import Pool, Manager
+import concurrent.futures
+import config as cfg
 class Block:
+    '''
+    Generate New Block Based on index, transaction, timestamp, previous_hash
+
+    #Documentation
+    self is not considered as argument because it is automaticly updated and the values are initalised in __init__
+    Objects are marked with ~ infront of them 
+    '''
     def __init__(self, index, transactions,  timestamp, previous_hash, nonce = False, has = False ):
         self.index = index
         self.transactions = transactions
-        self.timestamp = timestamp
+        self.timestamp = int(timestamp)
         self.previous_hash = previous_hash
         if(nonce == False):
             self.nonce = 0
         else:
             self.nonce = nonce
-        if(has == False):
-            pass
-        else:
-            self.hash = has
         
         #print(self)
+        if(has != False):
+            #
+            self.hash = has
+            pass
+        else:
+            pass
+                
 
     def compute_hash(self):
-        block_string = json.dumps(self.__dict__, sort_keys=True)
-        return sha512(block_string.encode()).hexdigest()
+        '''
+        This Function is used to compute the Hash of a block
+        args:
+            None 
+        return:
+            bool
+        toDo:
+        '''
+        try:
+            block_string = json.dumps(self.__dict__, sort_keys=True)
+            if(cfg.config['hash'] == 'sha512' ):
+                has = sha512(block_string.encode()).hexdigest()
+            elif(cfg.config['hash'] == 'sha256'):
+                has =  sha256(block_string.encode()).hexdigest()
+            else: 
+                has =  sha512(block_string.encode()).hexdigest()
+            #self.hash = has
+            return has
+        except:
+            pass
 
 
 class Blockchain:
-    # difficulty of our PoW algorithm
-    difficulty = int(sys.argv[5])
-    def __init__(self, chain, transaction, nonce, difficulty):
+    '''
+    Generate Blockchain to mine one Block it is reinitialised for every new Job
+
+    #Documentation
+    self is not considered as argument because it is automaticly updated and the values are initalised in __init__
+    Objects are marked with ~ infront of them 
+    '''
+    try:
+        difficulty = int(sys.argv[5])
+    except:
+        #print('diff ')
+        pass
+    def __init__(self, chain, transaction, nonce, difficulty, name):
         self.ch = []
-        chain = json.loads(chain)
+        #print(chain)
+        chain = [json.loads(chain)]
+        #print(chain)
         for block in chain:
-            #block = json.loads(block)
-            bl = Block(block['index'], block['transactions'], block['timestamp'], block['previous_hash'], block['nonce'], block['hash'])
+            #print(block)
+            bl = Block(block['index'], block['transactions'], block['timestamp'], block['previous_hash'], block['nonce'])
+            #bl.hash = bl.compute_hash()
             self.ch.append(bl)
+        self.kill = False
         self.chain = self.ch
         self.unconfirmed_transactions = transaction
         self.nonce = nonce
         self.result = []
-        #self.ws = websockets.connect(uri)
-        self.new_block = []
-        self.mine()
+        self.name = name
         self.difficulty = int(difficulty)
-        #self.initMining()
-    def create_genesis_block(self):
-        genesis_block = Block(0, [], time.time(), "0")
-        genesis_block.hash = genesis_block.compute_hash()
-        self.chain.append(genesis_block)
+        self.new_block = []
+        self.mine()  
+        self.kill = False
 
     @property
     def last_block(self):
         return self.chain[-1]
 
-    def is_valid_proof(self, block, block_hash):
-        return (block_hash.startswith('0' * Blockchain.difficulty) and
+    def isValidProof(self, block, block_hash):
+        '''
+        This Function is used to check if a block is valid with this proof
+        args:
+            ~Block 
+            block_hash => proof 
+        return:
+            boolean
+        toDo:
+            optimize the MinerPool speed #3
+        
+        '''
+        return (block_hash.startswith('0' * self.difficulty) and
                 block_hash == block.compute_hash())
-    def proof_of_work(self, nonce):
-        #print('proof')
-        block = self.new_block
-        #print(block.transactions, block.index, block.previous_hash, block.timestamp)
-        #nonce = args[0]# range
-        #print(nonce)
-        for nonce in range(int(nonce[0]), int(nonce[1])):
-            block.nonce = nonce
-            computed_hash = block.compute_hash()
-            s = computed_hash.startswith('0' * Blockchain.difficulty)
-            if(s):
-                if(self.is_valid_proof(block, computed_hash)):
-                    asyncio.run(self.submit( block, computed_hash))
-                    return[computed_hash,  nonce, block]
-        return None
-    async def submit(self,block, hashz):
-        uri = "ws://185.245.96.117:8765"
+    def asyncHelper(self):
+        return asyncio.run(self.messageRecv())
+    async def messageRecv(self):
+        '''
+        This Function is used as a watcher wich kills all workers when a valid share was accepted
+        args:
+            nonce = [border1, border2]  
+        return:
+            None
+            this function sends the data to the Pool
+        toDo:
+            Done ~ optimize the way to cancel the MinerPool #2
+            optimize the MinerPool speed #3
+        '''
+
+        uri = "ws://"+str(sys.argv[6])
         async with websockets.connect(uri) as websocket:
-            await websocket.send(json.dumps({'type': 'submitShare', 'data':['weiserhase', [block.__dict__, hashz]]}))
-            if(await websocket.recv() == 'true'):
-                print('Share Accepted')
+            await websocket.send(json.dumps({'type': 'registerWatcher'}))
+            async for message in websocket:
+                if(message== 'kill'):
+                    self.kill = True
+                    await websocket.send(json.dumps({'type': 'unregisterWatcher'}))
+                    return True
+
+    def proof_of_work(self, nonce):  
+        #print('proof')
+        '''
+        This Function is used to try out a nonce wich gives a hash with difficulty = (number of leadingZeros) of the hashed block
+        args:
+            nonce = [border1, border2]  
+        return:
+            None
+            this function sends the data to the Pool
+        toDo:
+            Done ~ optimize the way to cancel the MinerPool #2
+            optimize the MinerPool speed #3
+        '''
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(self.asyncHelper)
+            nz = nonce
+            start = time.time()
+            block = self.new_block
+            for nonce in range(int(nonce[0]), int(nonce[1])):
+                if(self.kill == True):
+                    exit()
+                    raise Exception
+                    return 'kill'
+                #if(nonce%3000 == 0):
+                    #print('true')
+                block.nonce = nonce
+                try:
+                    computed_hash = block.compute_hash()
+                    self.test = block.__dict__
+                except:
+                    print('0x3')
+                if(self.isValidProof(block, computed_hash)):
+                    #print(nonce)
+                    try:
+                        num = nonce - int(nz[0])
+                        #submit run the submitFunction
+                        asyncio.run(self.submit( block, computed_hash, num))
+                    except :
+                        print('0x2')
+                        pass
+                    return [block, computed_hash]
+            return None
+    async def submit(self,block, hashz, rate):
+        '''
+        This Function submits a valid block when the proofOfWork function finds a valkid value
+        args:
+            nonce = [border1, border2]  
+        return:
+            None
+            this function sends the data to the Pool
+        toDo:
+            Done~optimize the way to cancel the MinerPool #2
+            optimize the MinerPool speed #3
+        '''
+        try:
+            uri = "ws://" + str(sys.argv[6])
+            async with websockets.connect(uri) as websocket:
+                await websocket.send(json.dumps({'type': 'submitShare', 'data':[self.name, [block.__dict__, hashz], rate]}))
+                return
+        except:
+            pass
     def mine(self):
-        print('mine')
+        '''
+        This Function submits a valid block when the pr
+        args:
+            nonce = [border1, border2]  
+        return:
+            None
+            this function sends the data to the Pool
+        toDo:
+            optimize the way to cancel the MinerPool #2
+            optimize the MinerPool speed #3
+        '''
         if not self.unconfirmed_transactions:
             return False
         last_block = self.last_block
@@ -98,41 +221,44 @@ class Blockchain:
         new_block = Block(index=last_block.index + 1,
                           transactions=self.unconfirmed_transactions,
                           timestamp=time.time(),
-                          previous_hash=last_block.hash)
+                          previous_hash=last_block.compute_hash())
+        #print('Mining new Block' + str(new_block.index))
         count = multiprocessing.cpu_count()
-        n =2**64 /multiprocessing.cpu_count()
+        n =(self.nonce[1]-self.nonce[0])/count
 
-        #print(n)
         data = []
         self.new_block = new_block
-        for i in range(16):
+        for i in range(count):
             data.append( [self.nonce[0] +i*n, self.nonce[0] +(i+1)*n])
-        with Pool(count) as p:
-            
-            #print(data)
-            reslist = p.map(self.proof_of_work, data )
-            p.close()
+        #try:
+        with multiprocessing.Pool(count) as p:
+            try:
+                reslist = p.map(self.proof_of_work, data)
+            except :
+                return
+                p.terminate()
+            p.terminate()
             p.join()
-        for res in reslist:
-            r = (self.is_valid_proof(res[2], res[0]))
-            if(r == True):
-                self.result = res
-            #print(self.result)
-                #proof =  self.proof_of_work([new_block, self.nonce])
-        #self.result = reslist[r.randint(0, len(reslist)-1)]
-        #print(self.is_valid_proof(new_block, self.result[0]))
-        self.new_block = self.result[2]
+            for res in reslist:
+                if(res == True):
+                    p.terminate()
+        p.join()
+async def getChainData(uri):
+    async with websockets.connect(uri) as websocket:
+        await websocket.send(json.dumps({'type': 'getData'}))
+        async for message in websocket:
+            message = json.loads(message)
+            chain = (message)[0]
+            transaction = (message)[1]
+            return [chain, transaction]
+            
 if __name__ == "__main__":
     multiprocessing.freeze_support()
-    transaction = (sys.argv[1])
-    chain = json.loads(sys.argv[2])
+    uri = (sys.argv[1])
+    res = asyncio.run(getChainData(uri))
+    chain = res[1]
+    transaction = res[0]
     nonce = [json.loads(sys.argv[3]), json.loads(sys.argv[4])]
-    
     difficulty = json.loads(sys.argv[5])
-    blockchain = Blockchain(chain, transaction, nonce, difficulty)
-    uri = "ws://185.245.96.117:8765"
-    async def sendWs():
-        #print(blockchain.result, blockchain.new_block)
-        async with websockets.connect(uri) as websocket:
-            await websocket.send(json.dumps({'type': 'submitShare', 'data':['weiserhase', [blockchain.new_block.__dict__, blockchain.result[0]]]}))
-    #asyncio.run(sendWs())
+    name = sys.argv[7]
+    blockchain = Blockchain(chain, transaction, nonce, difficulty, name)

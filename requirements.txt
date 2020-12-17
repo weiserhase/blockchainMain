@@ -1,0 +1,5 @@
+websockets
+matplotlib
+asyncio
+requests
+numba

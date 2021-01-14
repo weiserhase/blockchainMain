@@ -1,6 +1,6 @@
 
 
-from hashlib import sha512, sha256
+from hashlib import sha512, sha256, blake2s
 import json
 import time
 
@@ -48,6 +48,8 @@ class Block:
                 return sha512(block_string.encode()).hexdigest()
             elif(cfg.config['hash'] == 'sha256'):
                 return sha256(block_string.encode()).hexdigest()
+            elif(cfg.config['hash'] == 'blake2s'):
+                has =  blake2s(block_string.encode()).hexdigest()
             else: 
                 return sha512(block_string.encode()).hexdigest()
         except:

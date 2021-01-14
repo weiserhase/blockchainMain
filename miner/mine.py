@@ -1,4 +1,4 @@
-from hashlib import sha512, sha256
+from hashlib import sha512, sha256, blake2s
 import json
 import time
 import websockets
@@ -56,6 +56,8 @@ class Block:
                 has = sha512(block_string.encode()).hexdigest()
             elif(cfg.config['hash'] == 'sha256'):
                 has =  sha256(block_string.encode()).hexdigest()
+            elif(cfg.config['hash'] == 'blake2s'):
+                has =  blake2s(block_string.encode()).hexdigest()
             else: 
                 has =  sha512(block_string.encode()).hexdigest()
             #self.hash = has

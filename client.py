@@ -17,7 +17,7 @@ async def chain():
         greeting = await websocket.recv()
         print(greeting)
 
-async def hello():
+async def newTransaction():
     uri = "ws://185.245.96.117:8765"
     async with websockets.connect(uri) as websocket:
         print(websocket)
@@ -55,7 +55,7 @@ i = input('getChain/newTransaction')
 if(i == '0'):
     asyncio.get_event_loop().run_until_complete(chain())
 elif(i == '1'):
-    asyncio.get_event_loop().run_until_complete(hello())
+    asyncio.get_event_loop().run_until_complete(newTransaction())
 elif(i == '2'):
     asyncio.get_event_loop().run_until_complete(graph())
 else:

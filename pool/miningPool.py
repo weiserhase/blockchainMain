@@ -112,9 +112,11 @@ class MiningPool:
         #sort Transaction based on fee
         if(cfg.config['hash'] == 'sha256'):
             ha = hashlib.sha256('test'.encode()).hexdigest
+        elif(cfg.config['hash'] == 'blake2s'):
+            ha = hashlib.blake2s('test'.encode()).hexdigest
         elif(cfg.config['hash'] == 'sha512'):
             ha = hashlib.sha512('test'.encode()).hexdigest
-            ha = str(ha)
+        ha = str(ha)
         ma = 2**len(ha)
         perMiner = ma/len(self.miners)
         data = []
